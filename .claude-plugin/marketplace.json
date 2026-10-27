@@ -1,0 +1,6 @@
+{
+  "name": "claude-chat-panel",
+  "owner": { "name": "FTBCP" },
+  "description": "A chat panel for the Claude desktop app's Code tab",
+  "plugins": [{ "name": "chat-panel", "source": "./" }]
+}
