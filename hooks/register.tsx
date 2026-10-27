@@ -74,7 +74,7 @@ const exists = async ($: any, path: string): Promise<boolean> => {
 
 const subfolders = async ($: any, path: string): Promise<string[]> => {
   try {
-    return (await $.fs.list(path)).filter((entry: any) => entry.kind === 'directory').map((entry: any) => entry.name)
+    return (await $.fs.list(path)).filter((entry: any) => entry.kind === 'dir').map((entry: any) => entry.name)
   } catch {
     return []
   }
@@ -294,7 +294,7 @@ const recordFiles = async ($: any, dir: string, depth: number): Promise<{ path: 
   }
   for (const entry of entries) {
     const path = `${dir}/${entry.name}`
-    if (entry.kind === 'directory' && depth > 0) found.push(...(await recordFiles($, path, depth - 1)))
+    if (entry.kind === 'dir' && depth > 0) found.push(...(await recordFiles($, path, depth - 1)))
     else if (entry.kind === 'file' && /^local_.*\.json$/.test(entry.name)) {
       found.push({ path, stamp: entry.mtimeMs, size: entry.size })
     }
@@ -337,7 +337,8 @@ const rebuildIndex = async ($: any) => {
         } catch {}
       }
     }
-    await $.fs.write(where.indexPath, JSON.stringify(next))
+    // A pass that found no records leaves the last good index in place.
+    if (next.length > 0) await $.fs.write(where.indexPath, JSON.stringify(next))
   } catch {
   } finally {
     isIndexing = false
