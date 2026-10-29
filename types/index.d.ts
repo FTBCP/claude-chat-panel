@@ -12,6 +12,8 @@ export type BoardRow = {
   updatedAt: number
   isHidden?: boolean
   folder?: string
+  // Context window fill, 0 to 100, from the chat's last reply.
+  context?: number
 }
 
 // One chat from the desktop app's own records.

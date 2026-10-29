@@ -415,6 +415,15 @@ const dateOf = (at: number): string => {
   return `${MONTHS[day.getMonth()]} ${day.getDate()}`
 }
 
+// How full this chat's context window is, 0 to 100, or undefined before its first reply.
+const contextOf = async ($: any): Promise<number | undefined> => {
+  try {
+    return (await $.session.usage()).context.percent
+  } catch {
+    return undefined
+  }
+}
+
 const isRoutine = async ($: any, chatId: string): Promise<boolean> =>
   (await read($, index)).some(entry => entry.id === chatId && entry.routine)
 
@@ -476,6 +485,7 @@ export const register: Register = (on, options) => {
       action: '',
       updatedAt: await $.clock.now(),
       isHidden: wasHidden && e.text.trim() === '',
+      context: await contextOf($),
     }
     await save($, row)
     await refresh($)
@@ -521,6 +531,7 @@ export const register: Register = (on, options) => {
       action,
       updatedAt: await $.clock.now(),
       isHidden: (await readRow($, id))?.isHidden === true,
+      context: await contextOf($),
     })
     await refresh($)
 
@@ -605,6 +616,7 @@ export const register: Register = (on, options) => {
             isWorking: row.status === 'working',
             action: row.action ?? '',
             isPinned: isPinned.has(row.hostId),
+            context: row.context ?? -1,
           }}
         />
       )
