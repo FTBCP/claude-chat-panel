@@ -10,9 +10,19 @@ type Header = {
 
 type Pointer = { isOver: boolean }
 
+// The panel's width last reported, shared by every header, so a width is posted once per change.
+let reportedWidth = 0
+
 const GroupHeader: ClientModule<Header, Pointer> = (header, surface) => {
   const { Text } = surface.elements
   const isOver = surface.state?.isOver ?? false
+
+  // The header spans the panel, so its width is the panel's. The hooks module keeps it
+  // and asks for it when the panel opens in another chat.
+  if (surface.columns > 0 && surface.columns !== reportedWidth) {
+    reportedWidth = surface.columns
+    surface.post({ width: surface.columns })
+  }
 
   surface.onPointer(event => {
     if (event.type === 'enter' || (event.type === 'move' && !isOver)) {
