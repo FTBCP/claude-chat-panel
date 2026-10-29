@@ -3,6 +3,8 @@ import type { ClientModule } from 'claude-code'
 // One chat's card in the panel: a strip in its project's color, the chat name,
 // where it left off, and a red action line only when Claude asked for something.
 // A click anywhere on it asks the hooks module to open the chat.
+// ⇅ picks the chat up to move it within its project; while one is picked up,
+// a click on another card of that project puts it there, and any other click puts it back.
 type Card = {
   id: string
   hostId: string
@@ -14,6 +16,11 @@ type Card = {
   isPinned: boolean
   // Context window fill, 0 to 100, or -1 when not known yet.
   context: number
+  // False for pinned cards, which keep the order they were pinned in.
+  canMove: boolean
+  // 'self' while this chat is picked up, 'target' while another chat of its project is,
+  // 'other' while anything else is.
+  moving: '' | 'self' | 'target' | 'other'
 }
 
 type Pointer = { isOver: boolean }
@@ -29,18 +36,24 @@ const ChatBlock: ClientModule<Card, Pointer> = (card, surface) => {
     } else if (event.type === 'leave') {
       surface.setState({ isOver: false })
     } else if (event.type === 'up' && event.button === 'left') {
-      // The top row ends in "✎ ☆ ✕", 3 columns each: hide, pin, then rename.
+      if (card.moving === 'target') return surface.post({ place: card.hostId })
+      if (card.moving !== '') return surface.post({ cancelMove: true })
+      // The top row ends in "⇅ ✎ ☆ ✕", 3 columns each: hide, pin, rename, then move.
       // Anywhere else opens the chat.
       const fromEnd = surface.columns - event.x
       if (event.y === 0 && fromEnd <= 3) surface.post({ hide: card.id })
       else if (event.y === 0 && fromEnd <= 6) surface.post({ pin: card.hostId })
       else if (event.y === 0 && fromEnd <= 9) surface.post({ rename: card.hostId })
+      else if (event.y === 0 && fromEnd <= 12 && card.canMove) surface.post({ move: card.hostId })
       else if (card.hostId) surface.post({ open: card.hostId })
     }
   })
 
+  const isSelf = card.moving === 'self'
+  const shade = isSelf ? card.color + '55' : isOver ? card.color + '33' : undefined
+
   return (
-    <Box flexDirection="row" backgroundColor={isOver ? card.color + '33' : undefined}>
+    <Box flexDirection="row" backgroundColor={shade}>
       <Box width={1} flexShrink={0} backgroundColor={card.color} />
       <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} paddingLeft={1}>
         <Box flexDirection="row">
@@ -57,6 +70,11 @@ const ChatBlock: ClientModule<Card, Pointer> = (card, surface) => {
               </Text>
             </Box>
           )}
+          {card.canMove && (
+            <Box width={3} flexShrink={0} justifyContent="center">
+              <Text dimColor={!isOver && !isSelf}>⇅</Text>
+            </Box>
+          )}
           <Box width={3} flexShrink={0} justifyContent="center">
             <Text dimColor={!isOver}>✎</Text>
           </Box>
@@ -69,6 +87,11 @@ const ChatBlock: ClientModule<Card, Pointer> = (card, surface) => {
             <Text dimColor={!isOver}>✕</Text>
           </Box>
         </Box>
+        {isSelf && (
+          <Text weight="semibold" color={card.color}>
+            Moving. Click the chat it should take the place of.
+          </Text>
+        )}
         {card.now !== '' &&
           (card.isWorking ? (
             <Text italic dimColor>

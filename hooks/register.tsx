@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { BoardRow, BoardStatus, IndexEntry } from '../types'
+import type { BoardRow, BoardStatus, IndexEntry, Limit, Moving } from '../types'
 
 const PANE = 'chat-panel'
 const WRAP_UP = 'mcp__ccd_turn__wrap_up'
@@ -23,6 +23,17 @@ const pins = atom({ plugin: 'chat-panel', key: 'pins' } as const, [])
 const collapsed = atom({ plugin: 'chat-panel', key: 'collapsed' } as const, [])
 // The app id of the chat whose card shows the rename box, or '' for none.
 const renaming = atom({ plugin: 'chat-panel', key: 'renaming' } as const, '')
+// The order you put projects and chats in, shared through the plugin's store like pins.
+const groupOrder = atom({ plugin: 'chat-panel', key: 'groupOrder' } as const, [])
+const chatOrder = atom({ plugin: 'chat-panel', key: 'chatOrder' } as const, {})
+// What this panel has picked up to move, if anything.
+const moving = atom({ plugin: 'chat-panel', key: 'moving' } as const, null as Moving)
+// The plan's 5-hour and weekly limits from the latest reply in any chat.
+const limits = atom({ plugin: 'chat-panel', key: 'limits' } as const, [])
+
+// The projects and each project's cards as last drawn, so a click can put a moved one in place.
+let shownGroups: string[] = []
+let shownChats: Record<string, string[]> = {}
 
 // Where things live on this computer, found once at session start (see findPlaces).
 type Places = {
@@ -356,12 +367,80 @@ const loadIndex = async ($: any) => {
   } catch {}
 }
 
-// Pins and collapsed projects live in the plugin's store, so every chat's panel shares them.
+// Pins, collapsed projects, your order and the plan limits live in the plugin's store,
+// so every chat's panel shares them.
 const loadChoices = async ($: any) => {
   const pinned = ((await $.store.get('pins')) as string[] | undefined) ?? []
   const shut = ((await $.store.get('collapsed')) as string[] | undefined) ?? []
+  const groups = ((await $.store.get('groupOrder')) as string[] | undefined) ?? []
+  const chats = ((await $.store.get('chatOrder')) as Record<string, string[]> | undefined) ?? {}
+  const latest = ((await $.store.get('limits')) as Limit[] | undefined) ?? []
   await update($, pins, () => pinned)
   await update($, collapsed, () => shut)
+  await update($, groupOrder, () => groups)
+  await update($, chatOrder, () => chats)
+  await update($, limits, () => latest)
+}
+
+// `list` with `id` moved into the place `target` holds.
+const movedInto = (list: string[], id: string, target: string): string[] => {
+  const at = list.indexOf(target)
+  if (at < 0 || id === target) return list
+  const rest = list.filter(one => one !== id)
+  rest.splice(at, 0, id)
+  return rest
+}
+
+// Unplaced items first, in the order given, then the placed ones in your order.
+const inYourOrder = <T,>(items: T[], idOf: (item: T) => string, placed: string[]): T[] => {
+  const byId = new Map(items.map(item => [idOf(item), item]))
+  const known = new Set(placed)
+  return [
+    ...items.filter(item => !known.has(idOf(item))),
+    ...placed.map(id => byId.get(id)).filter((item): item is T => item !== undefined),
+  ]
+}
+
+const placeGroup = async ($: any, project: string, target: string) => {
+  await $.store.set('groupOrder', movedInto(shownGroups, project, target))
+  await update($, moving, () => null)
+  await loadChoices($)
+}
+
+const placeChat = async ($: any, project: string, chatId: string, target: string) => {
+  const all = ((await $.store.get('chatOrder')) as Record<string, string[]> | undefined) ?? {}
+  const shown = movedInto(shownChats[project] ?? [], chatId, target)
+  // Chats placed before but not on the panel now keep their order after the shown ones.
+  const kept = (all[project] ?? []).filter(id => !shown.includes(id))
+  await $.store.set('chatOrder', { ...all, [project]: [...shown, ...kept] })
+  await update($, moving, () => null)
+  await loadChoices($)
+}
+
+// The plan's limits as the app reports them after each reply, kept when they change.
+const LIMIT_LABELS: Record<string, string> = { five_hour: '5-hour', seven_day: 'Week' }
+
+const saveLimits = async ($: any, reported: { kind: string; percentUsed: number; resetsAt?: string }[]) => {
+  const next: Limit[] = reported
+    .filter(one => LIMIT_LABELS[one.kind])
+    .map(one => ({ label: LIMIT_LABELS[one.kind], percent: Math.round(one.percentUsed), resetsAt: one.resetsAt ?? '' }))
+  if (next.length === 0) return
+  const was = (await $.store.get('limits')) as Limit[] | undefined
+  if (JSON.stringify(was) === JSON.stringify(next)) return
+  await $.store.set('limits', next)
+  await update($, limits, () => next)
+}
+
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+// "2:10pm" for the 5-hour limit, "Mon 2:10pm" for the week.
+const resetOf = (iso: string, withDay: boolean): string => {
+  const at = new Date(iso)
+  if (!iso || Number.isNaN(at.getTime())) return ''
+  const hour = at.getHours() % 12 || 12
+  const time = `${hour}:${String(at.getMinutes()).padStart(2, '0')}${at.getHours() < 12 ? 'am' : 'pm'}`
+
+  return withDay ? `${DAYS[at.getDay()]} ${time}` : time
 }
 
 const toggleChoice = async ($: any, key: 'pins' | 'collapsed', value: string) => {
@@ -445,6 +524,13 @@ export const register: Register = (on, options) => {
     })
     await ready($)
     hostId = await readEnv($, 'CLAUDE_CODE_HOST_SESSION_ID', places?.isWindows ?? false)
+    // Nothing runs yet when a chat opens, so a "Working on" left from before is stale:
+    // the app or the panel stopped before that reply finished.
+    const own = await readRow($, await $.session.id())
+    if (own?.status === 'working') await save($, { ...own, status: 'done' })
+    try {
+      await saveLimits($, (await $.session.usage()).rateLimits ?? [])
+    } catch {}
     void openPane($)
     await refresh($)
     $.clock.every(REFRESH_MS, () => refresh($))
@@ -459,6 +545,14 @@ export const register: Register = (on, options) => {
     await refresh($)
 
     return { text: 'Chat panel opened.' }
+  })
+
+  on('session.measure', async ($, e, next) => {
+    try {
+      await saveLimits($, e.rateLimits ?? [])
+    } catch {}
+
+    return next(e)
   })
 
   on('tool.call', { tool: WRAP_UP }, async ($, e, next) => {
@@ -553,8 +647,27 @@ export const register: Register = (on, options) => {
       toggle?: string
       rename?: string
       width?: number
+      move?: string
+      place?: string
+      moveGroup?: string
+      placeGroup?: string
+      cancelMove?: boolean
     } | null
     if (typeof data?.width === 'number' && data.width > 0) await $.store.set('width', Math.round(data.width))
+    if (data?.cancelMove) await update($, moving, () => null)
+    if (data?.moveGroup) {
+      const project = data.moveGroup
+      await update($, moving, () => ({ kind: 'group', id: project, project, name: project }))
+    }
+    if (data?.move) {
+      const chatId = data.move
+      const row = (await read($, rows)).find(one => one.hostId === chatId)
+      const title = (await read($, index)).find(entry => entry.id === chatId)?.title || row?.title || 'this chat'
+      if (row) await update($, moving, () => ({ kind: 'chat', id: chatId, project: row.project, name: title }))
+    }
+    const held = await read($, moving)
+    if (data?.placeGroup && held?.kind === 'group') await placeGroup($, held.id, data.placeGroup)
+    if (data?.place && held?.kind === 'chat') await placeChat($, held.project, held.id, data.place)
     if (data?.rename) await update($, renaming, () => data.rename ?? '')
     if (data?.open) await openChat($, data.open)
     if (data?.pin) await toggleChoice($, 'pins', data.pin)
@@ -577,6 +690,10 @@ export const register: Register = (on, options) => {
     const pinned = await read($, pins)
     const shut = await read($, collapsed)
     const renamingId = await read($, renaming)
+    const savedGroups = await read($, groupOrder)
+    const savedChats = await read($, chatOrder)
+    const held = await read($, moving)
+    const planLimits = await read($, limits)
     const now = Date.now()
 
     const byHost = new Map(all.map(entry => [entry.id, entry]))
@@ -607,7 +724,15 @@ export const register: Register = (on, options) => {
       />
     )
 
-    const card = (row: BoardRow) =>
+    // How a card takes part in a move: the one picked up, a place it can go, or neither.
+    const movingOf = (row: BoardRow, canMove: boolean): '' | 'self' | 'target' | 'other' => {
+      if (!held) return ''
+      if (held.kind === 'chat' && held.id === row.hostId) return 'self'
+      if (held.kind === 'chat' && held.project === row.project && canMove) return 'target'
+      return 'other'
+    }
+
+    const card = (row: BoardRow, canMove = false) =>
       row.hostId === renamingId ? (
         renameBox(row)
       ) : (
@@ -626,6 +751,8 @@ export const register: Register = (on, options) => {
             action: row.action ?? '',
             isPinned: isPinned.has(row.hostId),
             context: row.context ?? -1,
+            canMove,
+            moving: movingOf(row, canMove),
           }}
         />
       )
@@ -705,6 +832,7 @@ export const register: Register = (on, options) => {
       .filter((row): row is BoardRow => row !== undefined)
 
     // Projects with a chat in the last 30 days, the ones named in the setting first.
+    // Once you've moved one, your order wins, with projects you haven't placed yet on top.
     const projects = new Map<string, number>()
     for (const entry of live) {
       if (now - entry.last > PROJECT_AGE_MS || !entry.folder) continue
@@ -712,26 +840,63 @@ export const register: Register = (on, options) => {
       projects.set(project, Math.max(projects.get(project) ?? 0, entry.last))
     }
     for (const row of fresh) projects.set(row.project, Math.max(projects.get(row.project) ?? 0, row.updatedAt))
-    const order = [...projects.entries()].sort((a, b) => rankOf(a[0]) - rankOf(b[0]) || b[1] - a[1])
+    const order = inYourOrder(
+      [...projects.entries()].sort((a, b) => rankOf(a[0]) - rankOf(b[0]) || b[1] - a[1]),
+      ([project]) => project,
+      savedGroups,
+    )
+    shownGroups = order.map(([project]) => project)
+    shownChats = {}
+
+    // The plan's limits, red from 80% like the context meter.
+    const limitLines = planLimits.map(limit => {
+      const reset = resetOf(limit.resetsAt, limit.label === 'Week')
+      return (
+        <Text size="footnote" dimColor={limit.percent < 80} color={limit.percent >= 80 ? '#A32D2D' : undefined}>
+          {limit.label}: {limit.percent}% used{reset ? `, resets ${reset}` : ''}
+        </Text>
+      )
+    })
+
+    // While something is picked up, one line says what and offers a way out.
+    const movingLine = held && (
+      <Box flexDirection="row" gap={1} alignItems="center">
+        <Box flexGrow={1} flexShrink={1} minWidth={0}>
+          <Text weight="semibold" color={colorOf(held.project)}>
+            {held.kind === 'group'
+              ? `Moving ${held.name}. Click the project it should take the place of.`
+              : `Moving ${held.name}. Click the chat in ${held.project} it should take the place of.`}
+          </Text>
+        </Box>
+        <Box flexShrink={0}>
+          <Button key="cancel-move" label="Cancel" onPress={() => void update($, moving, () => null)} />
+        </Box>
+      </Box>
+    )
 
     return (
       <Box flexDirection="column" gap={3}>
         {searchBox}
+        {movingLine}
         {pinnedCards.length > 0 && (
           <Box flexDirection="column" gap={1}>
             <Text weight="semibold" size="footnote" dimColor>
               Pinned
             </Text>
-            {pinnedCards.map(card)}
+            {pinnedCards.map(row => card(row))}
           </Box>
         )}
         {order.length === 0 && <Text dimColor>Your chats show up here after you send a message in one.</Text>}
         {order.map(([project]) => {
           const isShut = shut.includes(project)
-          const cards = fresh
-            .filter(row => row.project === project && !isPinned.has(row.hostId))
-            .slice(0, MAX_PER_PROJECT)
+          const cards = inYourOrder(
+            fresh.filter(row => row.project === project && !isPinned.has(row.hostId)),
+            row => row.hostId,
+            savedChats[project] ?? [],
+          ).slice(0, MAX_PER_PROJECT)
+          shownChats[project] = cards.map(row => row.hostId)
           const onCards = new Set(cards.map(row => row.hostId))
+          const headMoving = held?.kind === 'group' ? (held.id === project ? 'self' : 'target') : ''
           const rest = live
             .filter(
               entry =>
@@ -746,9 +911,10 @@ export const register: Register = (on, options) => {
               <Client
                 key={`head-${project}`}
                 module="./group-header.tsx"
-                props={{ project, color: colorOf(project), isCollapsed: isShut }}
+                width="100%"
+                props={{ project, color: colorOf(project), isCollapsed: isShut, moving: headMoving }}
               />
-              {!isShut && cards.map(card)}
+              {!isShut && cards.map(row => card(row, true))}
               {/* One toggle right under the cards, so Show and Hide sit in the same spot. */}
               {!isShut && rest.length > 0 && (
                 <Button
@@ -774,6 +940,7 @@ export const register: Register = (on, options) => {
             </Box>
           )
         })}
+        {limitLines.length > 0 && <Box flexDirection="column">{limitLines}</Box>}
       </Box>
     )
   })

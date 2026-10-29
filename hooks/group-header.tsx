@@ -1,11 +1,15 @@
 import type { ClientModule } from 'claude-code'
 
-// A project's heading: its name in the project's color with ▾ or ▸.
-// A click collapses or expands the project.
+// A project's heading: its name in the project's color with ▾ or ▸, and ⇅ at
+// the right end. A click on the name collapses or expands the project; ⇅ picks
+// the project up to move it. While a project is picked up, a click on another
+// heading puts it there, and a click on its own heading puts it back.
 type Header = {
   project: string
   color: string
   isCollapsed: boolean
+  // 'self' while this project is picked up, 'target' while another one is.
+  moving: '' | 'self' | 'target'
 }
 
 type Pointer = { isOver: boolean }
@@ -14,7 +18,7 @@ type Pointer = { isOver: boolean }
 let reportedWidth = 0
 
 const GroupHeader: ClientModule<Header, Pointer> = (header, surface) => {
-  const { Text } = surface.elements
+  const { Box, Text } = surface.elements
   const isOver = surface.state?.isOver ?? false
 
   // The header spans the panel, so its width is the panel's. The hooks module keeps it
@@ -30,15 +34,30 @@ const GroupHeader: ClientModule<Header, Pointer> = (header, surface) => {
     } else if (event.type === 'leave') {
       surface.setState({ isOver: false })
     } else if (event.type === 'up' && event.button === 'left') {
-      surface.post({ toggle: header.project })
+      if (header.moving === 'self') surface.post({ cancelMove: true })
+      else if (header.moving === 'target') surface.post({ placeGroup: header.project })
+      else if (surface.columns - event.x <= 3) surface.post({ moveGroup: header.project })
+      else surface.post({ toggle: header.project })
     }
   })
 
+  const isSelf = header.moving === 'self'
+
   return (
-    <Text weight="semibold" size="footnote" color={header.color} underline={isOver}>
-      {header.isCollapsed ? '▸ ' : '▾ '}
-      {header.project}
-    </Text>
+    <Box flexDirection="row" backgroundColor={isSelf ? header.color + '33' : undefined}>
+      <Box flexGrow={1} flexShrink={1} minWidth={0}>
+        <Text weight="semibold" size="footnote" color={header.color} underline={isOver} wrap="truncate-end">
+          {header.isCollapsed ? '▸ ' : '▾ '}
+          {header.project}
+          {isSelf ? '  (moving)' : ''}
+        </Text>
+      </Box>
+      <Box width={3} flexShrink={0} justifyContent="flex-end">
+        <Text dimColor={!isOver && !isSelf} color={isSelf ? header.color : undefined}>
+          ⇅
+        </Text>
+      </Box>
+    </Box>
   )
 }
 

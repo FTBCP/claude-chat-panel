@@ -27,6 +27,12 @@ export type IndexEntry = {
   routine: boolean
 }
 
+// What's picked up to move: a project's heading, or one chat within its project.
+export type Moving = { kind: 'group' | 'chat'; id: string; project: string; name: string } | null
+
+// One plan limit as the last reply reported it: '5-hour' or 'Week', percent used, reset time.
+export type Limit = { label: string; percent: number; resetsAt: string }
+
 declare module 'claude-code' {
   interface PluginState {
     'chat-panel': {
@@ -37,6 +43,10 @@ declare module 'claude-code' {
       pins: string[]
       collapsed: string[]
       renaming: string
+      groupOrder: string[]
+      chatOrder: Record<string, string[]>
+      moving: Moving
+      limits: Limit[]
     }
   }
 }

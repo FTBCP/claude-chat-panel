@@ -1,6 +1,6 @@
 {
   "name": "chat-panel",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "A side panel for the Claude desktop app that lists your Claude Code chats by project, with where each one left off and what it needs from you",
   "author": { "name": "FTBCP" },
   "license": "MIT",
@@ -10,7 +10,7 @@
     "projectOrder": {
       "type": "string",
       "title": "Project order",
-      "description": "Projects to list first, in order, each with an optional color. Example: client-work:#378ADD, personal:#7F77DD",
+      "description": "Project colors, and the order to start with until you move projects in the panel. Example: client-work:#378ADD, personal:#7F77DD",
       "default": ""
     },
     "recordsFolder": {

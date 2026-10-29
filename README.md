@@ -12,6 +12,9 @@ A side panel for the Claude desktop app that lists your Claude Code chats by pro
 - **Search.** Filter all your chats by name
 - **New.** Opens a blank new chat in the folder you used last
 - **Pin (☆), rename (✎) and hide (✕)** on each card. A hidden chat comes back the next time you type in it
+- **Move (⇅).** Click ⇅ on a project or a chat, then click the project or chat it should take the place of. Chats move within their own project. Projects and chats you haven't placed yet show on top
+- **Context meter.** How full each chat's context window is, next to its name, in red from 80%
+- **Plan limits.** Your 5-hour and weekly limits at the bottom, with when each resets, in red from 80%. They update with each reply
 - **Collapse.** Click a project name to fold it away
 
 Archived chats and routine runs stay off the panel.
@@ -48,7 +51,7 @@ claude plugin update chat-panel@claude-chat-panel
 
 Both are optional. Set them in the plugin's settings in the desktop app, or with `claude plugin configure chat-panel@claude-chat-panel`.
 
-- **Project order:** projects to list first, in order, each with an optional color, like `client-work:#378ADD, personal:#7F77DD`. Other projects follow, newest first, with colors picked automatically
+- **Project order:** project colors, and the order to start with, like `client-work:#378ADD, personal:#7F77DD`. Other projects follow, newest first, with colors picked automatically. Once you move a project with ⇅, the order you set in the panel wins
 - **Chat records folder:** leave it blank. Fill it in only if "Show older chats" and search come up empty, with the `claude-code-sessions` folder where your desktop app keeps its chat records
 
 ## How it works
