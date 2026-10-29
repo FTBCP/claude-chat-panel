@@ -12,6 +12,8 @@ type Card = {
   isWorking: boolean
   action: string
   isPinned: boolean
+  // Context window fill, 0 to 100, or -1 when not known yet.
+  context: number
 }
 
 type Pointer = { isOver: boolean }
@@ -47,6 +49,14 @@ const ChatBlock: ClientModule<Card, Pointer> = (card, surface) => {
               {card.title}
             </Text>
           </Box>
+          {/* Context window fill, red from 80% when the chat is close to compacting. */}
+          {card.context >= 0 && (
+            <Box flexShrink={0} paddingLeft={1}>
+              <Text size="footnote" dimColor={card.context < 80} color={card.context >= 80 ? '#A32D2D' : undefined}>
+                {card.context}%
+              </Text>
+            </Box>
+          )}
           <Box width={3} flexShrink={0} justifyContent="center">
             <Text dimColor={!isOver}>✎</Text>
           </Box>

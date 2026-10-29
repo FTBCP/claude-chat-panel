@@ -415,6 +415,22 @@ const dateOf = (at: number): string => {
   return `${MONTHS[day.getMonth()]} ${day.getDate()}`
 }
 
+// How full this chat's context window is, 0 to 100, or undefined before its first reply.
+const contextOf = async ($: any): Promise<number | undefined> => {
+  try {
+    return (await $.session.usage()).context.percent
+  } catch {
+    return undefined
+  }
+}
+
+// Opens the panel at the width last seen in any chat, since the app starts each chat's panel at its default.
+// shortcut: the app may ignore the requested width; if so, this does nothing.
+const openPane = async ($: any) => {
+  const width = (await $.store.get('width')) as number | undefined
+  return $.ui.open({ id: PANE, title: 'Your chats', ...(width ? { columns: width } : {}) })
+}
+
 const isRoutine = async ($: any, chatId: string): Promise<boolean> =>
   (await read($, index)).some(entry => entry.id === chatId && entry.routine)
 
@@ -429,7 +445,7 @@ export const register: Register = (on, options) => {
     })
     await ready($)
     hostId = await readEnv($, 'CLAUDE_CODE_HOST_SESSION_ID', places?.isWindows ?? false)
-    void $.ui.open({ id: PANE, title: 'Your chats' })
+    void openPane($)
     await refresh($)
     $.clock.every(REFRESH_MS, () => refresh($))
     void rebuildIndex($).then(() => refresh($))
@@ -439,7 +455,7 @@ export const register: Register = (on, options) => {
   })
 
   on('command.run', { command: 'chats' }, async $ => {
-    await $.ui.open({ id: PANE, title: 'Your chats' })
+    await openPane($)
     await refresh($)
 
     return { text: 'Chat panel opened.' }
@@ -476,6 +492,7 @@ export const register: Register = (on, options) => {
       action: '',
       updatedAt: await $.clock.now(),
       isHidden: wasHidden && e.text.trim() === '',
+      context: await contextOf($),
     }
     await save($, row)
     await refresh($)
@@ -521,6 +538,7 @@ export const register: Register = (on, options) => {
       action,
       updatedAt: await $.clock.now(),
       isHidden: (await readRow($, id))?.isHidden === true,
+      context: await contextOf($),
     })
     await refresh($)
 
@@ -534,7 +552,9 @@ export const register: Register = (on, options) => {
       pin?: string
       toggle?: string
       rename?: string
+      width?: number
     } | null
+    if (typeof data?.width === 'number' && data.width > 0) await $.store.set('width', Math.round(data.width))
     if (data?.rename) await update($, renaming, () => data.rename ?? '')
     if (data?.open) await openChat($, data.open)
     if (data?.pin) await toggleChoice($, 'pins', data.pin)
@@ -605,6 +625,7 @@ export const register: Register = (on, options) => {
             isWorking: row.status === 'working',
             action: row.action ?? '',
             isPinned: isPinned.has(row.hostId),
+            context: row.context ?? -1,
           }}
         />
       )
