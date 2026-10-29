@@ -1,6 +1,6 @@
 {
   "name": "chat-panel",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A side panel for the Claude desktop app that lists your Claude Code chats by project, with where each one left off and what it needs from you",
   "author": { "name": "FTBCP" },
   "license": "MIT",
