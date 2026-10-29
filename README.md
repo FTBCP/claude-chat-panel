@@ -28,8 +28,11 @@ In the Claude desktop app's Code tab:
 From a terminal instead:
 
 ```bash
-claude plugin install chat-panel --marketplace FTBCP/claude-chat-panel
+claude plugin marketplace add FTBCP/claude-chat-panel
+claude plugin install chat-panel@claude-chat-panel
 ```
+
+If `claude plugin list` then says "failed to load" with "expected record", your terminal's `claude` is older than the desktop app's. The panel still loads in the desktop app. Run `claude update` to clear the message.
 
 The panel opens on the right side of each chat. If it's closed, type `/chats` in a chat to bring it back.
 
